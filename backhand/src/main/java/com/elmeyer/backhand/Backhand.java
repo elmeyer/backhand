@@ -248,6 +248,8 @@ public class Backhand {
 
     private static void detectMotion()
     {
+        Log.i(TAG, "Mat size: " + mImgGray.size());
+        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2));
     }
 
     /**
