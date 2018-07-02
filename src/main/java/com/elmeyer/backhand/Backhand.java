@@ -44,6 +44,9 @@ public class Backhand {
      */
     private static Semaphore mCameraOpenCloseLock = new Semaphore(1);
 
+    /**
+     * The {@link CameraManager} from the main Activity used to open {@link #mCamera}.
+     */
     private static CameraManager mCameraManager;
 
     /**
@@ -92,6 +95,21 @@ public class Backhand {
     private static Mat mImgGray;
 
     /**
+     * The timestamp of the last detected black frame, for taps.
+     */
+    private static Long mTimeSinceLastTap = null;
+
+    /**
+     * The tap event to send after successful detection.
+     */
+    private static Tap mTapEvent = null;
+
+    /**
+     * The callback interface used to communicate detected events with the Activity.
+     */
+    private static OnSwipeListener mOnSwipeListener;
+
+    /**
      * {@link ImageReader.OnImageAvailableListener} that takes a preview image and passes it
      * to OpenCV to detect the gesture.
      * from <a href="https://stackoverflow.com/a/33268451">https://stackoverflow.com/a/33268451</a>
@@ -102,15 +120,17 @@ public class Backhand {
                 @Override
                 public void onImageAvailable(ImageReader reader)
                 {
-                    Image image = mImageReader.acquireLatestImage();
+                    Image image = mImageReader.acquireNextImage();
                     if (image != null) {
                         /**
                          * "Spec guarantees that planes[0] is luma and has pixel stride of 1."
                          * (from: <a href="http://nezarobot.blogspot.com/2016/03/android-surfacetexture-camera2-opencv.html">
                          *     http://nezarobot.blogspot.com/2016/03/android-surfacetexture-camera2-opencv.html</a>)
                          */
+//                        System.out.println("Acquired image");
                         mImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
                                 image.getPlanes()[0].getBuffer());
+                        image.close();
                         detectMotion();
                     }
                 }
@@ -202,11 +222,12 @@ public class Backhand {
      * @throws SecurityException if the necessary permissions for camera use haven't been granted
      * @throws CameraAccessException if there is an error accessing the camera
      */
-    public Backhand(CameraManager manager)
+    public Backhand(OnSwipeListener onSwipeListener, CameraManager manager)
     throws SecurityException, CameraAccessException
     {
         startBackgroundThread();
 
+        mOnSwipeListener = onSwipeListener;
         mCameraManager = manager;
 
         for (String cameraId : manager.getCameraIdList()) {
@@ -246,10 +267,36 @@ public class Backhand {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
-    private static void detectMotion()
-    {
-        Log.i(TAG, "Mat size: " + mImgGray.size());
-        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2));
+    private static void detectMotion() {
+//        Log.i(TAG, "Mat size: " + mImgGray.size());
+//        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
+        double centerLuma = mImgGray.get(mImgGray.rows() / 2, mImgGray.cols() / 2)[0];
+        Long time = System.currentTimeMillis();
+        if (centerLuma == 0.0
+                && (mTimeSinceLastTap == null
+                    || ((time - mTimeSinceLastTap) < 500) && (time - mTimeSinceLastTap > 120))) {
+            mTimeSinceLastTap = time;
+            Log.i(TAG, "Tap");
+            if (mTapEvent == null) {
+                mTapEvent = Tap.SINGLE;
+            } else if (mTapEvent == Tap.SINGLE) {
+                mTapEvent = Tap.DOUBLE;
+            } else if (mTapEvent == Tap.DOUBLE) {
+                mTapEvent = Tap.TRIPLE;
+            } else if (mTapEvent == Tap.TRIPLE) {
+                mTapEvent = Tap.HELD;
+            }
+        } else if ((mTimeSinceLastTap != null) && (time - mTimeSinceLastTap > 500)) {
+            mTimeSinceLastTap = null;
+            if (mTapEvent != null) {
+                if (mTapEvent != Tap.HELD) {
+                    mOnSwipeListener.onTap(mTapEvent);
+                    mTapEvent = null;
+                } else {
+                    mTapEvent = null;
+                }
+            }
+        }
     }
 
     /**
@@ -309,10 +356,6 @@ public class Backhand {
             if (null != mCamera) {
                 mCamera.close();
                 mCamera = null;
-            }
-            if (null != mImageReader) {
-                mImageReader.close();
-                mImageReader = null;
             }
         } catch (InterruptedException e) {
             throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
