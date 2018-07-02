@@ -1,6 +1,6 @@
 package com.elmeyer.backhand;
 
-enum Swipe
+public enum Swipe
 {
-    UP, DOWN, LEFT, RIGHT;
+    UP, DOWN, LEFT, RIGHT
 }
