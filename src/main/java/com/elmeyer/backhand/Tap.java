@@ -1,6 +1,6 @@
 package com.elmeyer.backhand;
 
-enum Tap
+public enum Tap
 {
-    SINGLE, DOUBLE, TRIPLE;
+    SINGLE, DOUBLE, TRIPLE, HELD
 }
