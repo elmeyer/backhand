@@ -97,7 +97,7 @@ public class Backhand {
     /**
      * The timestamp of the last detected black frame, for taps.
      */
-    private static Long mTimeSinceLastTap = null;
+    private static Long mTimeOfLastTap = null;
 
     /**
      * The tap event to send after successful detection.
@@ -132,6 +132,11 @@ public class Backhand {
                                 image.getPlanes()[0].getBuffer());
                         image.close();
                         detectMotion();
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             };
@@ -267,36 +272,58 @@ public class Backhand {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
-    private static void detectMotion() {
+    private static void detectMotion()
+    {
 //        Log.i(TAG, "Mat size: " + mImgGray.size());
 //        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
-        double centerLuma = mImgGray.get(mImgGray.rows() / 2, mImgGray.cols() / 2)[0];
         Long time = System.currentTimeMillis();
-        if (centerLuma == 0.0
-                && (mTimeSinceLastTap == null
-                    || ((time - mTimeSinceLastTap) < 500) && (time - mTimeSinceLastTap > 120))) {
-            mTimeSinceLastTap = time;
-            Log.i(TAG, "Tap");
-            if (mTapEvent == null) {
-                mTapEvent = Tap.SINGLE;
-            } else if (mTapEvent == Tap.SINGLE) {
-                mTapEvent = Tap.DOUBLE;
-            } else if (mTapEvent == Tap.DOUBLE) {
-                mTapEvent = Tap.TRIPLE;
-            } else if (mTapEvent == Tap.TRIPLE) {
-                mTapEvent = Tap.HELD;
+        if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) {
+            double centerLuma = getCenterLuma();
+            if (centerLuma < 30.0) {
+                mTimeOfLastTap = time;
+                if (mTapEvent == null) {
+                    mTapEvent = Tap.MAYBE_SINGLE;
+                } else if (mTapEvent == Tap.MAYBE_SINGLE) {
+                    mTapEvent = Tap.SINGLE;
+                } else if (mTapEvent == Tap.SINGLE) {
+                    mTapEvent = Tap.MAYBE_DOUBLE;
+                } else if (mTapEvent == Tap.MAYBE_DOUBLE) {
+                    mTapEvent = Tap.DOUBLE;
+                } else if (mTapEvent == Tap.DOUBLE) {
+                    mTapEvent = Tap.MAYBE_TRIPLE;
+                } else if (mTapEvent == Tap.MAYBE_TRIPLE) {
+                    mTapEvent = Tap.TRIPLE;
+                } else if (mTapEvent == Tap.TRIPLE) {
+                    mTapEvent = Tap.MAYBE_HELD;
+                } else if (mTapEvent == Tap.MAYBE_HELD) {
+                    mTapEvent = Tap.HELD;
+                }
+            } else {
+                if (mTapEvent == Tap.MAYBE_DOUBLE) {
+                    mTapEvent = Tap.SINGLE;
+                } else if (mTapEvent == Tap.MAYBE_TRIPLE) {
+                    mTapEvent = Tap.DOUBLE;
+                } else if (mTapEvent == Tap.MAYBE_HELD) {
+                    mTapEvent = Tap.TRIPLE;
+                }
             }
-        } else if ((mTimeSinceLastTap != null) && (time - mTimeSinceLastTap > 500)) {
-            mTimeSinceLastTap = null;
+        } else if ((mTimeOfLastTap != null) && (time - mTimeOfLastTap > 500)) {
+            mTimeOfLastTap = null;
             if (mTapEvent != null) {
-                if (mTapEvent != Tap.HELD) {
+                if ((mTapEvent == Tap.SINGLE) || (mTapEvent == Tap.DOUBLE)
+                    || (mTapEvent == Tap.TRIPLE)) {
                     mOnSwipeListener.onTap(mTapEvent);
+                    Log.i(TAG, mTapEvent + " tap");
                     mTapEvent = null;
-                } else {
+                } else if (mTapEvent == Tap.HELD) {
                     mTapEvent = null;
                 }
             }
         }
+    }
+
+    private static double getCenterLuma() {
+        return mImgGray.get(mImgGray.rows() / 2, mImgGray.cols() / 2)[0];
     }
 
     /**
