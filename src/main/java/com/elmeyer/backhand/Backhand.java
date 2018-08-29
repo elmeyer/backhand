@@ -277,9 +277,10 @@ public class Backhand {
 //        Log.i(TAG, "Mat size: " + mImgGray.size());
 //        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
         Long time = System.currentTimeMillis();
-        if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) {
-            double centerLuma = getCenterLuma();
-            if (centerLuma < 30.0) {
+        if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) { // TODO: Fix time interval
+            double globalLumaAvg = getGlobalLumaAvg();
+            Log.i(TAG, "average luminosity: " + globalLumaAvg);
+            if (globalLumaAvg < 30.0) { // TODO: Fix threshold
                 mTimeOfLastTap = time;
                 if (mTapEvent == null) {
                     mTapEvent = Tap.MAYBE_SINGLE;
@@ -307,7 +308,7 @@ public class Backhand {
                     mTapEvent = Tap.TRIPLE;
                 }
             }
-        } else if ((mTimeOfLastTap != null) && (time - mTimeOfLastTap > 500)) {
+        } else if ((mTimeOfLastTap != null) && (time - mTimeOfLastTap > 500)) { // TODO: Fix time interval
             mTimeOfLastTap = null;
             if (mTapEvent != null) {
                 if ((mTapEvent == Tap.SINGLE) || (mTapEvent == Tap.DOUBLE)
@@ -324,6 +325,18 @@ public class Backhand {
 
     private static double getCenterLuma() {
         return mImgGray.get(mImgGray.rows() / 2, mImgGray.cols() / 2)[0];
+    }
+
+    private static double getGlobalLumaAvg()
+    {
+        double accumulatedLuminance = 0;
+        for (int i = 0; i < mImgGray.rows(); i++) {
+            for (int j = 0; j < mImgGray.cols(); j++) {
+                accumulatedLuminance += mImgGray.get(i, j)[0];
+            }
+        }
+
+        return accumulatedLuminance / (double) mImgGray.total();
     }
 
     /**
