@@ -278,7 +278,7 @@ public class Backhand {
 //        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
         Long time = System.currentTimeMillis();
         if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) { // TODO: Fix time interval
-            double globalLumaAvg = getGlobalLumaAvg();
+            double globalLumaAvg = getCenterLuma();
             Log.i(TAG, "average luminosity: " + globalLumaAvg);
             if (globalLumaAvg < 30.0) { // TODO: Fix threshold
                 mTimeOfLastTap = time;
@@ -323,20 +323,45 @@ public class Backhand {
         }
     }
 
+    private static double getPointLuma() {
+        return mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0];
+    }
+
+    /**
+     * Returns the average luminosity of a 50x50 square around the center of the image
+     */
     private static double getCenterLuma() {
-        return mImgGray.get(mImgGray.rows() / 2, mImgGray.cols() / 2)[0];
+        return getRangeAverage((mImgGray.rows()/2) - 25, (mImgGray.rows()/2) + 25,
+                               (mImgGray.cols()/2) - 25, (mImgGray.cols()/2) + 25);
     }
 
     private static double getGlobalLumaAvg()
     {
-        double accumulatedLuminance = 0;
-        for (int i = 0; i < mImgGray.rows(); i++) {
-            for (int j = 0; j < mImgGray.cols(); j++) {
-                accumulatedLuminance += mImgGray.get(i, j)[0];
-            }
-        }
+        return getRangeAverage(0, mImgGray.rows(), 0, mImgGray.cols());
+    }
 
-        return accumulatedLuminance / (double) mImgGray.total();
+    /**
+     * Gets the average luminance of a specified region.
+     * @param startRow Number of the first row to include in the calculation (Range: 0...mImgGray.rows()-1)
+     * @param endRow Number of the first row to exclude from the calculation (Range: 1...mImgGray.rows())
+     * @param startCol Number of the first column to include in the calculation (Range: 0...mImgGray.cols()-1)
+     * @param endCol Number of the first column to exclude from the calculation (Range: 1...mImgGray.cols())
+     * @return Average luminance value in the specified area, or -1 on illegal region specification
+     */
+    private static double getRangeAverage(int startRow, int endRow, int startCol, int endCol)
+    {
+        if ((startRow < endRow) && (startCol < endCol)) {
+            double accumulatedLuminance = 0;
+            for (int i = startRow; i < endRow; i++) {
+                for (int j = startCol; j < endCol; j++) {
+                    accumulatedLuminance += mImgGray.get(i, j)[0];
+                }
+            }
+
+            return accumulatedLuminance / (double) ((endRow - startRow) * (endCol - startCol));
+        } else {
+            return -1;
+        }
     }
 
     /**
