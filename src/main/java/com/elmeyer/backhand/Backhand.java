@@ -21,6 +21,7 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -108,6 +109,14 @@ public class Backhand {
      * The callback interface used to communicate detected events with the Activity.
      */
     private static OnSwipeListener mOnSwipeListener;
+
+    /**
+     * An {@link ArrayList} holding the luminance calculators to be executed later.
+     */
+    private static ArrayList<LumaAnalysisRunnable> mLumaAnalysisRunnables
+            = new ArrayList<>(6);
+
+    // private static LumaAnalysisRunnable[] mLumaAnalysisRunnableArray = new
 
     /**
      * {@link ImageReader.OnImageAvailableListener} that takes a preview image and passes it
@@ -235,6 +244,8 @@ public class Backhand {
         mOnSwipeListener = onSwipeListener;
         mCameraManager = manager;
 
+        Size smallest = null;
+
         for (String cameraId : manager.getCameraIdList()) {
             CameraCharacteristics characteristics =
                     manager.getCameraCharacteristics(cameraId);
@@ -252,7 +263,7 @@ public class Backhand {
             mCameraId = cameraId;
 
             // get smallest possible preview size to make computation more efficient
-            Size smallest = Collections.min(
+            smallest = Collections.min(
                     Arrays.asList(map.getOutputSizes(ImageFormat.YUV_420_888)),
                     new CompareSizesByArea());
 
@@ -267,6 +278,20 @@ public class Backhand {
 
         if (!OpenCVLoader.initDebug()) {
             Log.e(TAG, "Unable to load OpenCV");
+        }
+
+        // Fill mLumaAnalysisRunnables with thirds of the image
+        int rowThird = smallest.getHeight() / 3;
+        int colThird = smallest.getWidth() / 3;
+        for (int i = 0; i < 3; i++) {
+            mLumaAnalysisRunnables.add(
+                    new LumaAnalysisRunnable(rowThird*i, rowThird*(i+1),
+                            0, smallest.getWidth(), mImgGray)
+            );
+            mLumaAnalysisRunnables.add(
+                    new LumaAnalysisRunnable(0, smallest.getHeight(),
+                            colThird*i, colThird*(i+1), mImgGray)
+            );
         }
 
         Log.i(TAG, "Instantiated new " + this.getClass());
