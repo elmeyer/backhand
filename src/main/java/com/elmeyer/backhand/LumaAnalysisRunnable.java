@@ -9,7 +9,7 @@ import org.opencv.core.Mat;
 class LumaAnalysisRunnable implements Runnable
 {
     private static int mStartRow, mEndRow, mStartCol, mEndCol;
-    private static Mat mImg;
+    private Mat mImg;
 
     public double mLuma = 0;
 
@@ -36,13 +36,15 @@ class LumaAnalysisRunnable implements Runnable
 
     public void run()
     {
-        Mat tmpImg = mImg.clone(); // to assure the image doesn't change
-        for (int i = mStartRow; i < mEndRow; i++) {
-            for (int j = mStartCol; j < mEndCol; j++) {
-                mLuma += tmpImg.get(i, j)[0];
+        if (mImg != null) {
+            Mat tmpImg = mImg.clone(); // to assure the image doesn't change
+            for (int i = mStartRow; i < mEndRow; i++) {
+                for (int j = mStartCol; j < mEndCol; j++) {
+                    mLuma += tmpImg.get(i, j)[0];
+                }
             }
-        }
 
-        mLuma = mLuma / (double) ((mEndRow - mStartRow) * (mEndCol - mStartCol));
+            mLuma = mLuma / (double) ((mEndRow - mStartRow) * (mEndCol - mStartCol));
+        }
     }
 }

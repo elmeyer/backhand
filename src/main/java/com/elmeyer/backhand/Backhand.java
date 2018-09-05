@@ -111,12 +111,10 @@ public class Backhand {
     private static OnSwipeListener mOnSwipeListener;
 
     /**
-     * An {@link ArrayList} holding the luminance calculators to be executed later.
+     * An array holding the luminance calculators to be executed later.
      */
-    private static ArrayList<LumaAnalysisRunnable> mLumaAnalysisRunnables
-            = new ArrayList<>(6);
-
-    // private static LumaAnalysisRunnable[] mLumaAnalysisRunnableArray = new
+    private static LumaAnalysisRunnable[] mLumaAnalysisRunnables =
+            new LumaAnalysisRunnable[6];
 
     /**
      * {@link ImageReader.OnImageAvailableListener} that takes a preview image and passes it
@@ -139,9 +137,12 @@ public class Backhand {
 //                        System.out.println("Acquired image");
                         mImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
                                 image.getPlanes()[0].getBuffer());
+//                        Mat tmpImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
+//                                image.getPlanes()[0].getBuffer());
+//                        mImgGray = tmpImgGray;
                         image.close();
-                        detectMotion();
                         try {
+                            detectMotion();
                             Thread.sleep(50);
                         } catch (InterruptedException e) {
                             e.printStackTrace();
@@ -280,30 +281,52 @@ public class Backhand {
             Log.e(TAG, "Unable to load OpenCV");
         }
 
+        mImgGray = new Mat(smallest.getHeight(), smallest.getWidth(), CvType.CV_8UC1);
+
         // Fill mLumaAnalysisRunnables with thirds of the image
         int rowThird = smallest.getHeight() / 3;
         int colThird = smallest.getWidth() / 3;
         for (int i = 0; i < 3; i++) {
-            mLumaAnalysisRunnables.add(
+            mLumaAnalysisRunnables[i] =
                     new LumaAnalysisRunnable(rowThird*i, rowThird*(i+1),
-                            0, smallest.getWidth(), mImgGray)
-            );
-            mLumaAnalysisRunnables.add(
+                            0, smallest.getWidth(), mImgGray);
+            mLumaAnalysisRunnables[i+3] =
                     new LumaAnalysisRunnable(0, smallest.getHeight(),
-                            colThird*i, colThird*(i+1), mImgGray)
-            );
+                            colThird*i, colThird*(i+1), mImgGray);
         }
 
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
-    private static void detectMotion()
-    {
+    private static void detectMotion() throws InterruptedException {
 //        Log.i(TAG, "Mat size: " + mImgGray.size());
 //        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
         Long time = System.currentTimeMillis();
         if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) { // TODO: Fix time interval
-            double globalLumaAvg = getCenterLuma();
+            // TODO: Fix this
+            /*double tmpLuma = 0;
+            Thread[] lumaAnalysisThreads = new Thread[3]; // TODO: 3 is only valid for now! Once swipe detection happens, this needs to be 6.
+
+            // Compute the average luminosity of all thirds of the image concurrently
+            for (int i = 0; i < lumaAnalysisThreads.length; i++) {
+                Thread t = new Thread(mLumaAnalysisRunnables[i]);
+                t.start();
+                lumaAnalysisThreads[i] = t;
+            }
+
+            // Wait for computations to finish
+            for (int i = 0; i < lumaAnalysisThreads.length; i++)
+                lumaAnalysisThreads[i].join();
+
+            // Average the results to get the average luminance for the entire image
+            double globalLumaAvg = 0;
+            for (int i = 0; i < lumaAnalysisThreads.length; i++) {
+                globalLumaAvg += mLumaAnalysisRunnables[i].mLuma;
+            }
+            globalLumaAvg = globalLumaAvg / (double) lumaAnalysisThreads.length;*/
+
+            double globalLumaAvg = getPointLuma();
+
             Log.i(TAG, "average luminosity: " + globalLumaAvg);
             if (globalLumaAvg < 30.0) { // TODO: Fix threshold
                 mTimeOfLastTap = time;
@@ -348,31 +371,43 @@ public class Backhand {
         }
     }
 
+    /**
+     * @deprecated Use {@link LumaAnalysisRunnable} instead.
+     * @return Luminance of the center point
+     */
+    @Deprecated
     private static double getPointLuma() {
         return mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0];
     }
 
     /**
      * Returns the average luminosity of a 50x50 square around the center of the image
+     * @deprecated Use {@link LumaAnalysisRunnable} instead.
      */
+    @Deprecated
     private static double getCenterLuma() {
         return getRangeAverage((mImgGray.rows()/2) - 25, (mImgGray.rows()/2) + 25,
                                (mImgGray.cols()/2) - 25, (mImgGray.cols()/2) + 25);
     }
 
+    /**
+     * @deprecated Use {@link LumaAnalysisRunnable} instead.
+     * @return Average luminance across the entire image
+     */
+    @Deprecated
     private static double getGlobalLumaAvg()
     {
         return getRangeAverage(0, mImgGray.rows(), 0, mImgGray.cols());
     }
 
-    /**
-     * Gets the average luminance of a specified region.
+    /**Gets the average luminance of a specified region.
      * @param startRow Number of the first row to include in the calculation (Range: 0...mImgGray.rows()-1)
      * @param endRow Number of the first row to exclude from the calculation (Range: 1...mImgGray.rows())
      * @param startCol Number of the first column to include in the calculation (Range: 0...mImgGray.cols()-1)
      * @param endCol Number of the first column to exclude from the calculation (Range: 1...mImgGray.cols())
      * @return Average luminance value in the specified area, or -1 on illegal region specification
      */
+    @Deprecated
     private static double getRangeAverage(int startRow, int endRow, int startCol, int endCol)
     {
         if ((startRow < endRow) && (startCol < endCol)) {
