@@ -34,6 +34,11 @@ class LumaAnalysisRunnable implements Runnable
         this.mImg = img;
     }
 
+    public void updateImg(Mat img)
+    {
+        this.mImg = img;
+    }
+
     public void run()
     {
         if (mImg != null) {

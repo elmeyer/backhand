@@ -137,13 +137,10 @@ public class Backhand {
 //                        System.out.println("Acquired image");
                         mImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
                                 image.getPlanes()[0].getBuffer());
-//                        Mat tmpImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
-//                                image.getPlanes()[0].getBuffer());
-//                        mImgGray = tmpImgGray;
                         image.close();
                         try {
                             detectMotion();
-                            Thread.sleep(50);
+                            // Thread.sleep(50); // why do we need this?
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
@@ -304,11 +301,12 @@ public class Backhand {
         Long time = System.currentTimeMillis();
         if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) { // TODO: Fix time interval
             // TODO: Fix this
-            /*double tmpLuma = 0;
+            double tmpLuma = 0;
             Thread[] lumaAnalysisThreads = new Thread[3]; // TODO: 3 is only valid for now! Once swipe detection happens, this needs to be 6.
 
             // Compute the average luminosity of all thirds of the image concurrently
             for (int i = 0; i < lumaAnalysisThreads.length; i++) {
+                mLumaAnalysisRunnables[i].updateImg(mImgGray);
                 Thread t = new Thread(mLumaAnalysisRunnables[i]);
                 t.start();
                 lumaAnalysisThreads[i] = t;
@@ -323,9 +321,9 @@ public class Backhand {
             for (int i = 0; i < lumaAnalysisThreads.length; i++) {
                 globalLumaAvg += mLumaAnalysisRunnables[i].mLuma;
             }
-            globalLumaAvg = globalLumaAvg / (double) lumaAnalysisThreads.length;*/
+            globalLumaAvg = globalLumaAvg / (double) lumaAnalysisThreads.length;
 
-            double globalLumaAvg = getPointLuma();
+            // double globalLumaAvg = getPointLuma();
 
             Log.i(TAG, "average luminosity: " + globalLumaAvg);
             if (globalLumaAvg < 30.0) { // TODO: Fix threshold
