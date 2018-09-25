@@ -193,6 +193,7 @@ public class Backhand {
                         }
                         */
                         detectMotion();
+                        mFrames++;
                     }
                 }
             };

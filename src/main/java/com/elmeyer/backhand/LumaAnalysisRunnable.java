@@ -8,7 +8,7 @@ import org.opencv.core.Mat;
  */
 class LumaAnalysisRunnable implements Runnable
 {
-    private static int mStartRow, mEndRow, mStartCol, mEndCol;
+    private final int mStartRow, mEndRow, mStartCol, mEndCol;
     private Mat mImg;
 
     public double mLuma = 0;
