@@ -12,6 +12,7 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.util.Log;
 import android.util.Size;
@@ -21,7 +22,6 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -98,12 +98,17 @@ public class Backhand {
     /**
      * The timestamp of the last detected black frame, for taps.
      */
-    private static Long mTimeOfLastTap = null;
+    private static Long mTimeOfLastMotion = null;
 
     /**
      * The tap event to send after successful detection.
      */
     private static Tap mTapEvent = null;
+
+    /**
+     * The swipe event to send after successful detection.
+     */
+    private static Swipe mSwipeEvent = null;
 
     /**
      * The callback interface used to communicate detected events with the Activity.
@@ -115,6 +120,46 @@ public class Backhand {
      */
     private static LumaAnalysisRunnable[] mLumaAnalysisRunnables =
             new LumaAnalysisRunnable[6];
+
+    /**
+     * An integer storing the current fps, for timing.
+     */
+    private static int mFps = 0;
+
+    /**
+     * An integer acting as a frame counter.
+     */
+    private static int mFrames = 0;
+
+    /**
+     * The number of the last frame (within the second) that had an action.
+     */
+    private static int mLastFrame = 0;
+
+    /**
+     * A {@link Looper} to allow background FPS calculation.
+     */
+    private static Looper mLooper;
+
+    /**
+     * A {@link Handler} running {@link #mFpsUpdateRunnable} every second.
+     */
+    private static Handler mFpsHandler;
+
+    /**
+     * A {@link Runnable} updating {@link #mFps} every second.
+     */
+    private static Runnable mFpsUpdateRunnable = new Runnable()
+    {
+        @Override
+        public void run()
+        {
+            mFps = mFrames;
+            mFrames = 0;
+            Log.d(TAG, "FPS: " + mFps);
+            mFpsHandler.postDelayed(this, 1000);
+        }
+    };
 
     /**
      * {@link ImageReader.OnImageAvailableListener} that takes a preview image and passes it
@@ -138,12 +183,16 @@ public class Backhand {
                         mImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
                                 image.getPlanes()[0].getBuffer());
                         image.close();
+                        /*
                         try {
                             detectMotion();
+                            mFrames++;
                             // Thread.sleep(50); // why do we need this?
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
+                        */
+                        detectMotion();
                     }
                 }
             };
@@ -193,6 +242,7 @@ public class Backhand {
                                 try {
                                     mCameraCaptureSession.setRepeatingRequest(mPreviewRequest,
                                             null, mBackgroundHandler);
+                                    mFpsHandler.post(mFpsUpdateRunnable);
                                 } catch (CameraAccessException e) {
                                     e.printStackTrace();
                                 }
@@ -234,13 +284,15 @@ public class Backhand {
      * @throws SecurityException if the necessary permissions for camera use haven't been granted
      * @throws CameraAccessException if there is an error accessing the camera
      */
-    public Backhand(OnSwipeListener onSwipeListener, CameraManager manager)
+    public Backhand(OnSwipeListener onSwipeListener, CameraManager manager, Looper looper)
     throws SecurityException, CameraAccessException
     {
         startBackgroundThread();
 
         mOnSwipeListener = onSwipeListener;
         mCameraManager = manager;
+        mLooper = looper;
+        mFpsHandler = new Handler(mLooper);
 
         Size smallest = null;
 
@@ -283,6 +335,10 @@ public class Backhand {
         // Fill mLumaAnalysisRunnables with thirds of the image
         int rowThird = smallest.getHeight() / 3;
         int colThird = smallest.getWidth() / 3;
+
+        /**
+         * {@link Third}
+         */
         for (int i = 0; i < 3; i++) {
             mLumaAnalysisRunnables[i] =
                     new LumaAnalysisRunnable(rowThird*i, rowThird*(i+1),
@@ -295,50 +351,150 @@ public class Backhand {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
 
+    /**
+     * Helper method for computing the average luminosity of a contiguous top->bottom/left->right image area.
+     * @param offset Offset: 0 for full top->bottom, 3 for full left-> right, between/more for less
+     * @param computeAvg Whether or not to compute the average luminance over the specified area
+     * @return average luminosity over specified area or 0
+     */
+    private static double computeLumaForward(int offset, boolean computeAvg)
+    {
+        Thread lumaAnalysisThreads[];
+        if (offset <= 3) {
+            lumaAnalysisThreads = new Thread[3];
+        } else {
+            lumaAnalysisThreads = new Thread[6];
+        }
+
+        // Compute the average luminosity of all thirds of the image concurrently
+        for (int i = offset; i < lumaAnalysisThreads.length; i++) {
+            mLumaAnalysisRunnables[i].updateImg(mImgGray);
+            Thread t = new Thread(mLumaAnalysisRunnables[i]);
+            t.start();
+            lumaAnalysisThreads[i] = t;
+        }
+
+        // Wait for computations to finish
+        for (int i = offset; i < lumaAnalysisThreads.length; i++) {
+            try {
+                lumaAnalysisThreads[i].join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        if (computeAvg) {
+            double lumaAvg = 0;
+            for (int i = offset; i < lumaAnalysisThreads.length; i++) {
+                lumaAvg += mLumaAnalysisRunnables[i].mLuma;
+            }
+            lumaAvg = lumaAvg / (double) (lumaAnalysisThreads.length - offset);
+
+            return lumaAvg;
+        } else {
+            return 0;
+        }
+    }
+
+    /**
+     * Helper method for computing the average luminosity of a contiguous right->left/bottom->top image area.
+     * @param offset Offset: 3 for full right->left, 6 for full bottom->top, less/between for less
+     * @param computeAvg Whether or not to compute the average luminance over the specified area
+     * @return average luminosity over specified area or 0
+     */
+    private static double computeLumaBackward(int offset, boolean computeAvg)
+    {
+        Thread lumaAnalysisThreads[] = new Thread[6];
+
+        int countFrom;
+        if (offset <= 3) {
+            countFrom = 5;
+        } else {
+            countFrom = 2;
+        }
+
+        // Compute the average luminosity of all thirds of the image concurrently
+        for (int i = countFrom; i > (lumaAnalysisThreads.length - offset - 1); i--) {
+            mLumaAnalysisRunnables[i].updateImg(mImgGray);
+            Thread t = new Thread(mLumaAnalysisRunnables[i]);
+            t.start();
+            lumaAnalysisThreads[i] = t;
+        }
+
+        // Wait for computations to finish
+        for (int i = countFrom; i > (lumaAnalysisThreads.length - offset - 1); i--) {
+            try {
+                lumaAnalysisThreads[i].join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        if (computeAvg) {
+            double lumaAvg = 0;
+            for (int i = countFrom; i > (lumaAnalysisThreads.length - offset - 1); i--) {
+                lumaAvg += mLumaAnalysisRunnables[i].mLuma;
+            }
+            if (offset <= 3) {
+                lumaAvg = lumaAvg / (double) (offset);
+            } else {
+                lumaAvg = lumaAvg / (double) (offset - 3);
+            }
+
+            return lumaAvg;
+        } else {
+            return 0;
+        }
+    }
+
+    /**
+     * Helper method to compute luminance in parallel for some regions.
+     * @param which Which regions to compute
+     *
+     * NOTE: You must retrieve the computed luminance yourself afterwards.
+     */
+    private static void computeLuma(Third... which)
+    {
+        Thread[] lumaAnalysisThreads = new Thread[which.length];
+
+        int j = 0;
+        for (Third i : which) {
+            mLumaAnalysisRunnables[i.which].updateImg(mImgGray);
+            Thread t = new Thread(mLumaAnalysisRunnables[i.which]);
+            t.start();
+            lumaAnalysisThreads[j++] = t;
+        }
+
+        for (Thread t : lumaAnalysisThreads) {
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /*
     private static void detectMotion() throws InterruptedException {
 //        Log.i(TAG, "Mat size: " + mImgGray.size());
 //        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
         Long time = System.currentTimeMillis();
-        if (mTimeOfLastTap == null || ((time - mTimeOfLastTap) < 500)) { // TODO: Fix time interval
+        if (mTimeOfLastMotion == null ||
+                (((time - mTimeOfLastMotion) < 500) && ((mFrames - mLastFrame) == 3) )) { // TODO: Fix time interval
             // TODO: Fix this
-            double tmpLuma = 0;
-            Thread[] lumaAnalysisThreads = new Thread[3]; // TODO: 3 is only valid for now! Once swipe detection happens, this needs to be 6.
-
-            // Compute the average luminosity of all thirds of the image concurrently
-            for (int i = 0; i < lumaAnalysisThreads.length; i++) {
-                mLumaAnalysisRunnables[i].updateImg(mImgGray);
-                Thread t = new Thread(mLumaAnalysisRunnables[i]);
-                t.start();
-                lumaAnalysisThreads[i] = t;
-            }
-
-            // Wait for computations to finish
-            for (int i = 0; i < lumaAnalysisThreads.length; i++)
-                lumaAnalysisThreads[i].join();
 
             // Average the results to get the average luminance for the entire image
-            double globalLumaAvg = 0;
-            for (int i = 0; i < lumaAnalysisThreads.length; i++) {
-                globalLumaAvg += mLumaAnalysisRunnables[i].mLuma;
-            }
-            globalLumaAvg = globalLumaAvg / (double) lumaAnalysisThreads.length;
+            double globalLumaAvg = computeLumaForward(0);
 
-            // double globalLumaAvg = getPointLuma();
-
-            Log.i(TAG, "average luminosity: " + globalLumaAvg);
-            if (globalLumaAvg < 30.0) { // TODO: Fix threshold
-                mTimeOfLastTap = time;
-                if (mTapEvent == null) {
-                    mTapEvent = Tap.MAYBE_SINGLE;
-                } else if (mTapEvent == Tap.MAYBE_SINGLE) {
-                    mTapEvent = Tap.SINGLE;
-                } else if (mTapEvent == Tap.SINGLE) {
-                    mTapEvent = Tap.MAYBE_DOUBLE;
-                } else if (mTapEvent == Tap.MAYBE_DOUBLE) {
+            // Log.i(TAG, "average luminosity: " + globalLumaAvg);
+            if ((globalLumaAvg < 50.0) && (mTapEvent == null)) { // TODO: Fix threshold
+                mTimeOfLastMotion = time;
+                mLastFrame = mFrames;
+                mTapEvent = Tap.SINGLE;
+            } else if (mTapEvent != null) {
+                if (mTapEvent == Tap.SINGLE) {
                     mTapEvent = Tap.DOUBLE;
                 } else if (mTapEvent == Tap.DOUBLE) {
-                    mTapEvent = Tap.MAYBE_TRIPLE;
-                } else if (mTapEvent == Tap.MAYBE_TRIPLE) {
                     mTapEvent = Tap.TRIPLE;
                 } else if (mTapEvent == Tap.TRIPLE) {
                     mTapEvent = Tap.MAYBE_HELD;
@@ -346,16 +502,13 @@ public class Backhand {
                     mTapEvent = Tap.HELD;
                 }
             } else {
-                if (mTapEvent == Tap.MAYBE_DOUBLE) {
-                    mTapEvent = Tap.SINGLE;
-                } else if (mTapEvent == Tap.MAYBE_TRIPLE) {
-                    mTapEvent = Tap.DOUBLE;
-                } else if (mTapEvent == Tap.MAYBE_HELD) {
+                if (mTapEvent == Tap.MAYBE_HELD) {
                     mTapEvent = Tap.TRIPLE;
                 }
             }
-        } else if ((mTimeOfLastTap != null) && (time - mTimeOfLastTap > 500)) { // TODO: Fix time interval
-            mTimeOfLastTap = null;
+        } else if ((mTimeOfLastMotion != null) && (time - mTimeOfLastMotion > 500)) { // TODO: Fix time interval
+            mTimeOfLastMotion = null;
+            mLastFrame = 0;
             if (mTapEvent != null) {
                 if ((mTapEvent == Tap.SINGLE) || (mTapEvent == Tap.DOUBLE)
                     || (mTapEvent == Tap.TRIPLE)) {
@@ -367,6 +520,15 @@ public class Backhand {
                 }
             }
         }
+    }
+    */
+
+    private static void detectMotion()
+    {
+        computeLumaForward(0, false);
+        Log.d(TAG, "Top luminance: " + mLumaAnalysisRunnables[Third.TOP.which].mLuma);
+        Log.d(TAG, "Center luminance: " + mLumaAnalysisRunnables[Third.CENTER_HORIZ.which].mLuma);
+        Log.d(TAG, "Bottom luminance: " + mLumaAnalysisRunnables[Third.BOTTOM.which].mLuma);
     }
 
     /**
