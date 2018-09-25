@@ -526,10 +526,78 @@ public class Backhand {
 
     private static void detectMotion()
     {
+        /*
         computeLumaForward(0, false);
         Log.d(TAG, "Top luminance: " + mLumaAnalysisRunnables[Third.TOP.which].mLuma);
         Log.d(TAG, "Center luminance: " + mLumaAnalysisRunnables[Third.CENTER_HORIZ.which].mLuma);
         Log.d(TAG, "Bottom luminance: " + mLumaAnalysisRunnables[Third.BOTTOM.which].mLuma);
+        */
+
+        if (mSwipeEvent == null) {
+            computeLuma(Third.BOTTOM, Third.LEFT, Third.RIGHT);
+            double bottomLuma = mLumaAnalysisRunnables[Third.BOTTOM.which].mLuma;
+            double leftLuma = mLumaAnalysisRunnables[Third.LEFT.which].mLuma;
+            double rightLuma = mLumaAnalysisRunnables[Third.RIGHT.which].mLuma;
+
+            if (bottomLuma < 10.0) {
+                mTimeOfLastMotion = System.currentTimeMillis();
+                mSwipeEvent = Swipe.UP_MAYBE;
+
+                computeLuma(Third.CENTER_HORIZ, Third.TOP);
+                double centerLuma = mLumaAnalysisRunnables[Third.CENTER_HORIZ.which].mLuma;
+                double topLuma = mLumaAnalysisRunnables[Third.TOP.which].mLuma;
+                double avg = (centerLuma + topLuma) / 2.0;
+
+                if (avg < 20.0) {
+                    mSwipeEvent = null;
+                }
+            } else if (leftLuma < 10.0) {
+                mTimeOfLastMotion = System.currentTimeMillis();
+                mSwipeEvent = Swipe.RIGHT_MAYBE;
+
+                computeLuma(Third.CENTER_VERT);
+                double centerLuma = mLumaAnalysisRunnables[Third.CENTER_VERT.which].mLuma;
+                double avg = (centerLuma + rightLuma) / 2.0;
+
+                if (avg < 20.0) {
+                    mSwipeEvent = null;
+                }
+            } else if (rightLuma < 10.0) {
+                mTimeOfLastMotion = System.currentTimeMillis();
+                mSwipeEvent = Swipe.LEFT_MAYBE;
+
+                computeLuma(Third.CENTER_VERT);
+                double centerLuma = mLumaAnalysisRunnables[Third.CENTER_VERT.which].mLuma;
+
+                double avg = (centerLuma + leftLuma) / 2.0;
+
+                if (avg < 20.0) {
+                    mSwipeEvent = null;
+                }
+            }
+        } else {
+            if ((mTimeOfLastMotion != null)
+                    && (System.currentTimeMillis() - mTimeOfLastMotion) > 500) {
+                double fullLuma = computeLumaForward(0, true);
+
+                if ((fullLuma > 10.0) && (mSwipeEvent != null)) {
+                    if (mSwipeEvent == Swipe.UP_MAYBE) {
+                        mSwipeEvent = Swipe.UP;
+                        Log.d(TAG, "SWIPE UP");
+                    } else if (mSwipeEvent == Swipe.RIGHT_MAYBE) {
+                        mSwipeEvent = Swipe.RIGHT;
+                        Log.d(TAG, "SWIPE RIGHT");
+                    } else if (mSwipeEvent == Swipe.LEFT_MAYBE) {
+                        mSwipeEvent = Swipe.LEFT;
+                        Log.d(TAG, "SWIPE LEFT");
+                    }
+
+                    mSwipeEvent = null;
+                }
+
+                mTimeOfLastMotion = null;
+            }
+        }
     }
 
     /**
