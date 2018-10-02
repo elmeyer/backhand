@@ -179,19 +179,9 @@ public class Backhand {
                          * (from: <a href="http://nezarobot.blogspot.com/2016/03/android-surfacetexture-camera2-opencv.html">
                          *     http://nezarobot.blogspot.com/2016/03/android-surfacetexture-camera2-opencv.html</a>)
                          */
-//                        System.out.println("Acquired image");
                         mImgGray = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1,
                                 image.getPlanes()[0].getBuffer());
                         image.close();
-                        /*
-                        try {
-                            detectMotion();
-                            mFrames++;
-                            // Thread.sleep(50); // why do we need this?
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                        */
                         detectMotion();
                         mFrames++;
                     }
@@ -232,7 +222,11 @@ public class Backhand {
 
                                 mCameraCaptureSession = session;
 
-                                // some "sane" settings: macro autofocus, no flash (for now)
+                                /**
+                                 * Some "sane" settings: macro autofocus, no flash (for now).
+                                 * This is highly dependent on the device's capabilities and
+                                 * unlikely to work for all devices.
+                                 */
                                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
                                         CaptureRequest.CONTROL_AF_MODE_MACRO);
                                 mPreviewRequestBuilder.set(CaptureRequest.FLASH_MODE,
@@ -281,7 +275,9 @@ public class Backhand {
      * Constructor for the back-of-device finger-on-camera interaction detector.
      * It is highly advised to call this asynchronously, since opening the camera and setting the
      * appropriate settings may take some time.
+     * @param onSwipeListener {@link OnSwipeListener} for triggering actions upon swiping
      * @param manager {@link CameraManager} allowing access to camera(s)
+     * @param looper {@link Looper} for the FPS counter
      * @throws SecurityException if the necessary permissions for camera use haven't been granted
      * @throws CameraAccessException if there is an error accessing the camera
      */
@@ -313,7 +309,7 @@ public class Backhand {
 
             mCameraId = cameraId;
 
-            // get smallest possible preview size to make computation more efficient
+            // get smallest possible preview size to make computation faster
             smallest = Collections.min(
                     Arrays.asList(map.getOutputSizes(ImageFormat.YUV_420_888)),
                     new CompareSizesByArea());
@@ -475,27 +471,26 @@ public class Backhand {
         }
     }
 
-    /*
-    private static void detectMotion() throws InterruptedException {
-//        Log.i(TAG, "Mat size: " + mImgGray.size());
-//        Log.i(TAG, "Center luma value: " + mImgGray.get(mImgGray.rows()/2, mImgGray.cols()/2)[0]);
+    /**
+     * detectMotion for {@link Tap}s.
+     */
+    private static void detectMotion() {
         Long time = System.currentTimeMillis();
-        if (mTimeOfLastMotion == null ||
-                (((time - mTimeOfLastMotion) < 500) && ((mFrames - mLastFrame) == 3) )) { // TODO: Fix time interval
-            // TODO: Fix this
-
-            // Average the results to get the average luminance for the entire image
-            double globalLumaAvg = computeLumaForward(0);
-
-            // Log.i(TAG, "average luminosity: " + globalLumaAvg);
-            if ((globalLumaAvg < 50.0) && (mTapEvent == null)) { // TODO: Fix threshold
+        if (mTimeOfLastMotion == null || ((time - mTimeOfLastMotion) < 500)) {
+            double centerLuma = getCenterLuma();
+            if (centerLuma < 30.0) {
                 mTimeOfLastMotion = time;
-                mLastFrame = mFrames;
-                mTapEvent = Tap.SINGLE;
-            } else if (mTapEvent != null) {
-                if (mTapEvent == Tap.SINGLE) {
+                if (mTapEvent == null) {
+                    mTapEvent = Tap.MAYBE_SINGLE;
+                } else if (mTapEvent == Tap.MAYBE_SINGLE) {
+                    mTapEvent = Tap.SINGLE;
+                } else if (mTapEvent == Tap.SINGLE) {
+                    mTapEvent = Tap.MAYBE_DOUBLE;
+                } else if (mTapEvent == Tap.MAYBE_DOUBLE) {
                     mTapEvent = Tap.DOUBLE;
                 } else if (mTapEvent == Tap.DOUBLE) {
+                    mTapEvent = Tap.MAYBE_TRIPLE;
+                } else if (mTapEvent == Tap.MAYBE_TRIPLE) {
                     mTapEvent = Tap.TRIPLE;
                 } else if (mTapEvent == Tap.TRIPLE) {
                     mTapEvent = Tap.MAYBE_HELD;
@@ -503,16 +498,19 @@ public class Backhand {
                     mTapEvent = Tap.HELD;
                 }
             } else {
-                if (mTapEvent == Tap.MAYBE_HELD) {
+                if (mTapEvent == Tap.MAYBE_DOUBLE) {
+                    mTapEvent = Tap.SINGLE;
+                } else if (mTapEvent == Tap.MAYBE_TRIPLE) {
+                    mTapEvent = Tap.DOUBLE;
+                } else if (mTapEvent == Tap.MAYBE_HELD) {
                     mTapEvent = Tap.TRIPLE;
                 }
             }
-        } else if ((mTimeOfLastMotion != null) && (time - mTimeOfLastMotion > 500)) { // TODO: Fix time interval
+        } else if ((mTimeOfLastMotion != null) && (time - mTimeOfLastMotion > 500)) {
             mTimeOfLastMotion = null;
-            mLastFrame = 0;
             if (mTapEvent != null) {
                 if ((mTapEvent == Tap.SINGLE) || (mTapEvent == Tap.DOUBLE)
-                    || (mTapEvent == Tap.TRIPLE)) {
+                        || (mTapEvent == Tap.TRIPLE)) {
                     mOnSwipeListener.onTap(mTapEvent);
                     Log.i(TAG, mTapEvent + " tap");
                     mTapEvent = null;
@@ -522,17 +520,13 @@ public class Backhand {
             }
         }
     }
-    */
 
+    /**
+     * detectMotion for {@link Swipe}s.
+     */
+    /*
     private static void detectMotion()
     {
-        /*
-        computeLumaForward(0, false);
-        Log.d(TAG, "Top luminance: " + mLumaAnalysisRunnables[Third.TOP.which].mLuma);
-        Log.d(TAG, "Center luminance: " + mLumaAnalysisRunnables[Third.CENTER_HORIZ.which].mLuma);
-        Log.d(TAG, "Bottom luminance: " + mLumaAnalysisRunnables[Third.BOTTOM.which].mLuma);
-        */
-
         if (mSwipeEvent == null) {
             computeLuma(Third.BOTTOM, Third.LEFT, Third.RIGHT);
             double bottomLuma = mLumaAnalysisRunnables[Third.BOTTOM.which].mLuma;
@@ -584,12 +578,15 @@ public class Backhand {
                     if (mSwipeEvent == Swipe.UP_MAYBE) {
                         mSwipeEvent = Swipe.UP;
                         Log.d(TAG, "SWIPE UP");
+                        mOnSwipeListener.onSwipe(mSwipeEvent);
                     } else if (mSwipeEvent == Swipe.RIGHT_MAYBE) {
                         mSwipeEvent = Swipe.RIGHT;
                         Log.d(TAG, "SWIPE RIGHT");
+                        mOnSwipeListener.onSwipe(mSwipeEvent);
                     } else if (mSwipeEvent == Swipe.LEFT_MAYBE) {
                         mSwipeEvent = Swipe.LEFT;
                         Log.d(TAG, "SWIPE LEFT");
+                        mOnSwipeListener.onSwipe(mSwipeEvent);
                     }
 
                     mSwipeEvent = null;
@@ -599,6 +596,7 @@ public class Backhand {
             }
         }
     }
+    */
 
     /**
      * @deprecated Use {@link LumaAnalysisRunnable} instead.
